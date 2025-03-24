@@ -18,10 +18,6 @@ Rip all your favorite audiobooks from libby!
 **NOTE:** If you do not see anything, it _could_ be because TamperMonkey is not set up properly on Chrome (and chromeium based) browsers! See the TamperMonkey [FAQ](https://www.tampermonkey.net/faq.php#Q209) page here for more info.
 
 <a href='https://ko-fi.com/V7V81BFLAH' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi6.png?v=6' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a>
-
-## Converting into a better format
-
-If the built-in mp3 converter fails, try out the scripts made bu [`Cerina witha Sea`](https://github.com/cerinawithasea) to convert them into the m4b [here](https://github.com/cerinawithasea/libregrab-m4b-creator)!
  
 ## Using the Python script
 
