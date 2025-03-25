@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          LibreGRAB
 // @namespace     http://tampermonkey.net/
-// @version       2025-03-18
+// @version       2025-03-25
 // @description   Download all the booty!
 // @author        PsychedelicPalimpsest
 // @license       MIT
@@ -100,6 +100,7 @@
     `;
     const chaptersMenu = `
         <h2>This book contains {CHAPTERS} chapters.</h2>
+        <button class="shibui-button" style="background-color: white" id="dumpAll"> Download all </button><br>
     `;
     let chapterMenuElem;
 
@@ -174,9 +175,27 @@
             }
         }
         if (chapterMenuElem.classList.contains("active"))
-            chapterMenuElem.classList.remove("active")
+            chapterMenuElem.classList.remove("active");
         else
-            chapterMenuElem.classList.add("active")
+            chapterMenuElem.classList.add("active");
+        chapterMenuElem.querySelector("#dumpAll").onclick = async function(){
+
+            chapterMenuElem.querySelector("#dumpAll").style.display = "none";
+
+            await Promise.all(getUrls().map(async function(url){
+                const res = await fetch(url.url);
+                const blob = await res.blob();
+
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = `${getAuthorString()} - ${BIF.map.title.main}.${url.index}.mp3`;
+                link.click();
+
+                URL.revokeObjectURL(link.href);
+            }));
+
+            chapterMenuElem.querySelector("#dumpAll").style.display = "";
+        };
     }
     function getAuthorString(){
         return BIF.map.creator.filter(creator => creator.role === 'author').map(creator => creator.name).join(", ");
