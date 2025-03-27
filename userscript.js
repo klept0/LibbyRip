@@ -682,8 +682,12 @@
         }
 
         for (let link of links){
+            let src = link;
+            if (!(src.startsWith("http://") || src.startsWith("https://"))) {
+              src = (new URL(src, new URL(url))).toString();
+            }
             let linkElement = doc.createElement('link');
-            linkElement.setAttribute("href", link);
+            linkElement.setAttribute("href", truncate(src));
             linkElement.setAttribute("rel", "stylesheet");
             linkElement.setAttribute("type", "text/css");
             head.appendChild(linkElement);
