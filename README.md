@@ -31,6 +31,13 @@ Then simply run the script, and drag-and-drop the extracted folder with your aud
 If you wish to use the script to make metadata, you must `Export audiobook` to include the metadata in the zip file.
 
 <sup>Note If you are getting a `Lame tag CRC check failed` mesage, that is **not** an error, just a warning, and it means nothing for you. It will still bake the metadata, just means _something_, is wrong with the mp3 Libby gave. (Not actually sure what the issue is myself)</sup>
+
+## Note on EPUBs
+The EPUB downloader is **unstable**, and **unreliable**. It works with a majority of books, however Libby does some processing to the xhtml before it is sent to the client, so that needs repaired, and this is not perfect, in addition I have no experience with the EPUB format. I am always open to contributions, so if you find an issue and want to fix it, please do. 
+
+
 <hr>
+
+
 
 **Disclaimer:** This tool is intended for educational and personal research purposes only. The developers do not condone or encourage any illegal activity, including the unauthorized distribution or reproduction of copyrighted content. By using this tool, you accept full responsibility for your actions and agree to comply with all applicable laws. Use at your own risk.
