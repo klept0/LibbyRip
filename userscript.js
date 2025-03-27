@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          LibreGRAB
 // @namespace     http://tampermonkey.net/
-// @version       2025-03-25
+// @version       2025-03-27
 // @description   Download all the booty!
 // @author        PsychedelicPalimpsest
 // @license       MIT
@@ -682,8 +682,12 @@
         }
 
         for (let link of links){
+            let src = link;
+            if (!(src.startsWith("http://") || src.startsWith("https://"))) {
+              src = (new URL(src, new URL(url))).toString();
+            }
             let linkElement = doc.createElement('link');
-            linkElement.setAttribute("href", link);
+            linkElement.setAttribute("href", truncate(src));
             linkElement.setAttribute("rel", "stylesheet");
             linkElement.setAttribute("type", "text/css");
             head.appendChild(linkElement);
@@ -731,6 +735,7 @@
         return mimeTypes[ext] || 'application/octet-stream';
     }
     function makePackage(oebps, assetRegistry){
+        const idStore = [];
         const doc = document.implementation.createDocument(
             'http://www.idpf.org/2007/opf', // default namespace
             'package', // root element name
@@ -818,7 +823,12 @@
         let components = getBookComponents();
         components.forEach(chapter =>{
             const item = doc.createElementNS('http://www.idpf.org/2007/opf', 'item');
-            item.setAttribute('id', chapter.meta.id);
+            let id = chapter.meta.id;
+            if (idStore.includes(id)) {
+              id = id + "-" + crypto.randomUUID();
+            }
+            item.setAttribute('id', id);
+            idStore.push(id);
             item.setAttribute('href', truncate(chapter.meta.path));
             item.setAttribute('media-type', 'application/xhtml+xml');
             manifest.appendChild(item);
@@ -833,7 +843,12 @@
         assetRegistry.forEach(asset => {
             const item = doc.createElementNS('http://www.idpf.org/2007/opf', 'item');
             let aname = asset.startsWith("http") ? getFilenameFromURL(asset) : asset;
-            item.setAttribute('id', aname.split(".")[0]);
+            let id = aname.split(".")[0];
+            if (idStore.includes(id)) {
+              id = id + "-" + crypto.randomUUID();
+            }
+            item.setAttribute('id', id);
+            idStore.push(id);
             item.setAttribute('href', aname);
             item.setAttribute('media-type', getMimeTypeFromFileName(aname));
             manifest.appendChild(item);
