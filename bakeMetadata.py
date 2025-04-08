@@ -30,7 +30,7 @@ def bake_metadata(workingDir, progress_callback=None):
 
     if "metadata" not in workingList:
         if progress_callback:
-            progress_callback("ERROR: <span style='color:red;'>Working directory MUST contain a metadata directory. Remember to click the 'Export audiobook' button in the website!</span>", 0)
+            progress_callback("ERROR: Working directory MUST contain a metadata directory. Remember to click the 'Export audiobook' button in the website!", 0)
         return
 
     cover = [f for f in os.listdir(os.path.join(workingDir, "metadata")) if f.startswith("cover")]
@@ -61,7 +61,7 @@ def bake_metadata(workingDir, progress_callback=None):
     total = len(parts)
     if total == 0:
         if progress_callback:
-            progress_callback("No parts found to process.", 0)
+            progress_callback("ERROR: No parts found to process.", 0)
         return
 
     for index, file in enumerate(parts):
@@ -177,21 +177,16 @@ class MetadataBakerApp(QtWidgets.QWidget):
 
     def run_bake(self):
         path = self.dirInput.text().strip()
-        # Clear the log output when the button is clicked
         self.logOutput.clear()
 
         if not os.path.isdir(path):
             self.logOutput.append("<span style='color:red;'>Invalid directory path.</span>")
             return
 
-        # Reset progress
         self.progressBar.setValue(0)
-
-        # Disable UI elements while processing
         self.runBtn.setEnabled(False)
         self.browseBtn.setEnabled(False)
 
-        # Setup the worker and thread
         self.thread = QtCore.QThread()
         self.worker = Worker(path)
         self.worker.moveToThread(self.thread)
@@ -205,7 +200,10 @@ class MetadataBakerApp(QtWidgets.QWidget):
         self.thread.start()
 
     def update_status(self, message, progress):
-        self.logOutput.append(message)
+        if message.startswith("ERROR"):
+            self.logOutput.append(f"<span style='color:red;'>{message}</span>")
+        else:
+            self.logOutput.append(message)
         self.progressBar.setValue(progress)
 
     def report_error(self, error_message):
@@ -224,22 +222,31 @@ def main():
     parser.add_argument("--gui", action="store_true", help="Run in GUI mode")
     args = parser.parse_args()
 
+    def cli_callback(message, progress):
+        if message.startswith("ERROR"):
+            print(f"\033[91m{message}\033[0m")
+        else:
+            print(f"{message} ({progress}%)")
+
     if args.gui:
         app = QtWidgets.QApplication(sys.argv)
         window = MetadataBakerApp()
-        # Pre-populate the directory field if provided
         if args.directory:
             window.dirInput.setText(args.directory)
-        # Define a callback that uses a queued connection to update the log widget.
-        def gui_log_callback(msg):
+
+        def gui_log_callback(message, progress=0):
+            if message.startswith("ERROR"):
+                styled = f"<span style='color:red;'>{message}</span>"
+            else:
+                styled = message
             QtCore.QMetaObject.invokeMethod(
                 window.logOutput,
                 "append",
                 QtCore.Qt.QueuedConnection,
-                QtCore.Q_ARG(str, msg)
+                QtCore.Q_ARG(str, styled)
             )
-        # Attach the custom GUI log handler to eyed3's logger.
-        gui_handler = GuiLogHandler(gui_log_callback)
+
+        gui_handler = GuiLogHandler(lambda msg: gui_log_callback(msg))
         gui_handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
         gui_handler.setLevel(logging.WARNING)
         eyed3.log.addHandler(gui_handler)
@@ -252,7 +259,7 @@ def main():
             workingDir = args.directory
         else:
             workingDir = input("Path to audiobook dir: ").strip()
-        bake_metadata(workingDir, progress_callback=lambda m, p: print(f"{m} ({p}%)"))
+        bake_metadata(workingDir, progress_callback=cli_callback)
 
 if __name__ == "__main__":
     main()
