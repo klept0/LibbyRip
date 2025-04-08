@@ -30,7 +30,7 @@ def bake_metadata(workingDir, progress_callback=None):
 
     if "metadata" not in workingList:
         if progress_callback:
-            progress_callback("ERROR: Working directory MUST contain a metadata directory.", 0)
+            progress_callback("ERROR: <span style='color:red;'>Working directory MUST contain a metadata directory. Remember to click the 'Export audiobook' button in the website!</span>", 0)
         return
 
     cover = [f for f in os.listdir(os.path.join(workingDir, "metadata")) if f.startswith("cover")]
@@ -157,8 +157,9 @@ class MetadataBakerApp(QtWidgets.QWidget):
         self.progressBar.setValue(0)
 
         # Log output
-        self.logOutput = QtWidgets.QPlainTextEdit()
+        self.logOutput = QtWidgets.QTextEdit()
         self.logOutput.setReadOnly(True)
+        self.logOutput.setAcceptRichText(True)
 
         layout.addLayout(dir_layout)
         layout.addWidget(self.runBtn)
@@ -180,7 +181,7 @@ class MetadataBakerApp(QtWidgets.QWidget):
         self.logOutput.clear()
 
         if not os.path.isdir(path):
-            self.logOutput.appendPlainText("Invalid directory path.")
+            self.logOutput.append("<span style='color:red;'>Invalid directory path.</span>")
             return
 
         # Reset progress
@@ -204,14 +205,14 @@ class MetadataBakerApp(QtWidgets.QWidget):
         self.thread.start()
 
     def update_status(self, message, progress):
-        self.logOutput.appendPlainText(message)
+        self.logOutput.append(message)
         self.progressBar.setValue(progress)
 
     def report_error(self, error_message):
-        self.logOutput.appendPlainText(f"Error: {error_message}")
+        self.logOutput.append(f"<span style='color:red;'>Error: {error_message}</span>")
 
     def process_finished(self):
-        self.logOutput.appendPlainText("Processing complete.")
+        self.logOutput.append("Processing complete.")
         self.runBtn.setEnabled(True)
         self.browseBtn.setEnabled(True)
 
@@ -233,7 +234,7 @@ def main():
         def gui_log_callback(msg):
             QtCore.QMetaObject.invokeMethod(
                 window.logOutput,
-                "appendPlainText",
+                "append",
                 QtCore.Qt.QueuedConnection,
                 QtCore.Q_ARG(str, msg)
             )
