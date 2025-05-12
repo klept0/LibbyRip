@@ -6,7 +6,7 @@ import eyed3
 import mimetypes
 import argparse
 import logging
-from eyed3.id3.frames import ChapterFrame
+from eyed3.id3 import ID3_V2_4
 from PyQt5 import QtWidgets, QtCore
 
 # Custom logging handler to forward logs to the GUI status window.
@@ -30,7 +30,10 @@ def bake_metadata(workingDir, progress_callback=None):
 
     if "metadata" not in workingList:
         if progress_callback:
-            progress_callback("ERROR: Working directory MUST contain a metadata directory. Remember to click the 'Export audiobook' button in the website!", 0)
+            progress_callback(
+                "ERROR: Working directory MUST contain a metadata directory. Remember to click the 'Export audiobook' button in the website!",
+                0
+            )
         return
 
     cover = [f for f in os.listdir(os.path.join(workingDir, "metadata")) if f.startswith("cover")]
@@ -43,7 +46,8 @@ def bake_metadata(workingDir, progress_callback=None):
         coverBytes = f.read()
     coverMime = mimetypes.guess_type(cover[0])[0]
 
-    with open(os.path.join(workingDir, "metadata", "metadata.json"), "r") as f:
+    # Open JSON file with UTF-8 encoding
+    with open(os.path.join(workingDir, "metadata", "metadata.json"), "r", encoding="utf-8") as f:
         metadata = json.load(f)
 
     authorName = "Unknown"
@@ -53,8 +57,7 @@ def bake_metadata(workingDir, progress_callback=None):
 
     chapters = {}
     for chap in metadata["chapters"]:
-        chapters[chap["spine"]] = chapters.get(chap["spine"], [])
-        chapters[chap["spine"]].append(chap)
+        chapters.setdefault(chap["spine"], []).append(chap)
 
     # Collect all parts to process
     parts = [file for file in workingList if file.startswith("Part ")]
@@ -69,15 +72,19 @@ def bake_metadata(workingDir, progress_callback=None):
 
         audiofile = eyed3.load(os.path.join(workingDir, file))
         if audiofile.tag is None:
-            audiofile.initTag()
+            # explizit ID3v2.4 initialisieren (UTF-8)
+            audiofile.initTag(version=ID3_V2_4)
         else:
             audiofile.tag.clear()
 
-        audiofile.tag.title = "Part " + str(int(number))
+        # make that we work with V2.4 and UTF-8
+        audiofile.tag.version = ID3_V2_4
+
+        audiofile.tag.title = f"Part {int(number)}"
         audiofile.tag.artist = authorName
         audiofile.tag.images.set(3, coverBytes, coverMime)
         audiofile.tag.album = metadata["title"]
-        audiofile.tag.track_num = (number, len(metadata["spine"]))
+        audiofile.tag.track_num = (int(number), len(metadata["spine"]))
 
         last = None
         child_ids = []
@@ -86,26 +93,35 @@ def bake_metadata(workingDir, progress_callback=None):
             if last is None:
                 last = chap
                 continue
-            name = ("ch" + str(i)).encode("ascii")
-            child_ids.append(name)
-            c = audiofile.tag.chapters.set(name, (int(last["offset"]) * 1000, int(chap["offset"]) * 1000 - 1))
+            cid = f"ch{i}".encode("ascii")
+            child_ids.append(cid)
+            c = audiofile.tag.chapters.set(
+                cid,
+                (int(last["offset"]) * 1000, int(chap["offset"]) * 1000 - 1)
+            )
             c.title = last["title"]
             last = chap
 
         if last is not None:
             c = audiofile.tag.chapters.set(
                 b"last",
-                (int(last["offset"]) * 1000, int(metadata["spine"][chap["spine"]]["duration"] * 1000))
+                (
+                    int(last["offset"]) * 1000,
+                    int(metadata["spine"][chap["spine"]]["duration"] * 1000)
+                )
             )
             c.title = last["title"]
 
         audiofile.tag.table_of_contents.set(
-            b"toc", toplevel=True,
+            b"toc",
+            toplevel=True,
             child_ids=child_ids + [b"last"],
-            description=u"Table of Contents"
+            description="Table of Contents"
         )
 
-        audiofile.tag.save()
+        # als v2.4 speichern, damit UTF-8 Zeichen (Umlaute) korrekt sind
+        audiofile.tag.save(version=ID3_V2_4)
+
         # Update progress
         if progress_callback:
             progress = int((index + 1) * 100 / total)
