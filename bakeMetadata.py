@@ -29,18 +29,17 @@ def bake_metadata(workingDir, progress_callback=None):
     workingList = sorted(os.listdir(workingDir))
 
     if "metadata" not in workingList:
+        error_msg = "ERROR: Working directory MUST contain a metadata directory. Remember to click the 'Export audiobook' button in the website!"
         if progress_callback:
-            progress_callback(
-                "ERROR: Working directory MUST contain a metadata directory. Remember to click the 'Export audiobook' button in the website!",
-                0
-            )
-        return
+            progress_callback(error_msg, 0)
+        raise FileNotFoundError(error_msg)
 
     cover = [f for f in os.listdir(os.path.join(workingDir, "metadata")) if f.startswith("cover")]
     if len(cover) != 1:
+        error_msg = "ERROR: Cover art not found"
         if progress_callback:
-            progress_callback("ERROR: Cover art not found", 0)
-        return
+            progress_callback(error_msg, 0)
+        raise FileNotFoundError(error_msg)
 
     with open(os.path.join(workingDir, "metadata", cover[0]), "rb") as f:
         coverBytes = f.read()
@@ -63,12 +62,14 @@ def bake_metadata(workingDir, progress_callback=None):
     parts = [file for file in workingList if file.startswith("Part ")]
     total = len(parts)
     if total == 0:
+        error_msg = "ERROR: No parts found to process."
         if progress_callback:
-            progress_callback("ERROR: No parts found to process.", 0)
-        return
+            progress_callback(error_msg, 0)
+        raise FileNotFoundError(error_msg)
 
     for index, file in enumerate(parts):
         number = file[len("Part "):].split(".")[0]
+        spine_index = int(number) - 1
 
         audiofile = eyed3.load(os.path.join(workingDir, file))
         if audiofile.tag is None:
@@ -86,6 +87,33 @@ def bake_metadata(workingDir, progress_callback=None):
         audiofile.tag.album = metadata["title"]
         audiofile.tag.track_num = (int(number), len(metadata["spine"]))
 
+        # Get chapters for this spine index
+        spine_chapters = chapters.get(spine_index, [])
+        if spine_chapters:
+            # Check for non-increasing offsets
+            prev_offset = spine_chapters[0]["offset"]
+            for i,chap in enumerate(spine_chapters[1:], start=1):
+                current_offset = chap["offset"]
+                if current_offset <= prev_offset:
+                    # Found overlapping chapter - report and exit
+                    error_parts = [
+                        f"ERROR: {os.path.join(workingDir, 'metadata', 'metadata.json')} has errors with overlapping chapter times.",
+                        f"Look in chapters for spine: {spine_index}",
+                        f"Chapter '{spine_chapters[i-1]['title']}' at offset: {spine_chapters[i-1]['offset']}",
+                        f"Chapter '{chap['title']}' at offset: {current_offset}"
+                    ]
+
+                    # Format for current mode
+                    if progress_callback and hasattr(progress_callback, '__self__'):
+                        error_msg = "<br>".join(error_parts)
+                    else:
+                        error_msg = "\n".join(error_parts)
+
+                    # Only send via exception, not progress callback
+                    raise ValueError(error_msg)
+                prev_offset = current_offset
+
+        # Process chapters normally since offsets are valid
         last = None
         child_ids = []
 
@@ -141,7 +169,12 @@ class Worker(QtCore.QObject):
         try:
             bake_metadata(self.path, progress_callback=self.progress.emit)
         except Exception as e:
-            self.error.emit(str(e))
+            # Format for GUI if needed
+            if "\n" in str(e):
+                msg = str(e).replace("\n", "<br>")
+            else:
+                msg = str(e)
+            self.error.emit(msg)
         finally:
             self.finished.emit()
 
@@ -216,14 +249,19 @@ class MetadataBakerApp(QtWidgets.QWidget):
         self.thread.start()
 
     def update_status(self, message, progress):
-        if message.startswith("ERROR"):
-            self.logOutput.append(f"<span style='color:red;'>{message}</span>")
-        else:
+        # Only display non-error messages here
+        if not message.startswith("ERROR"):
+            # Convert newlines to HTML line breaks for GUI
+            if "\n" in message:
+                message = message.replace("\n", "<br>")
             self.logOutput.append(message)
         self.progressBar.setValue(progress)
 
     def report_error(self, error_message):
-        self.logOutput.append(f"<span style='color:red;'>Error: {error_message}</span>")
+        # Ensure error messages are properly formatted for GUI
+        if "\n" in error_message:
+            error_message = error_message.replace("\n", "<br>")
+        self.logOutput.append(f"<span style='color:red;'>{error_message}</span>")
 
     def process_finished(self):
         self.logOutput.append("Processing complete.")
@@ -239,9 +277,8 @@ def main():
     args = parser.parse_args()
 
     def cli_callback(message, progress):
-        if message.startswith("ERROR"):
-            print(f"\033[91m{message}\033[0m")
-        else:
+        # Only display non-error messages here
+        if not message.startswith("ERROR"):
             print(f"{message} ({progress}%)")
 
     if args.gui:
@@ -251,16 +288,14 @@ def main():
             window.dirInput.setText(args.directory)
 
         def gui_log_callback(message, progress=0):
-            if message.startswith("ERROR"):
-                styled = f"<span style='color:red;'>{message}</span>"
-            else:
-                styled = message
-            QtCore.QMetaObject.invokeMethod(
-                window.logOutput,
-                "append",
-                QtCore.Qt.QueuedConnection,
-                QtCore.Q_ARG(str, styled)
-            )
+            # Only display non-error messages here
+            if not message.startswith("ERROR"):
+                QtCore.QMetaObject.invokeMethod(
+                    window.logOutput,
+                    "append",
+                    QtCore.Qt.QueuedConnection,
+                    QtCore.Q_ARG(str, message)
+                )
 
         gui_handler = GuiLogHandler(lambda msg: gui_log_callback(msg))
         gui_handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
@@ -275,7 +310,11 @@ def main():
             workingDir = args.directory
         else:
             workingDir = input("Path to audiobook dir: ").strip()
-        bake_metadata(workingDir, progress_callback=cli_callback)
+        try:
+            bake_metadata(workingDir, progress_callback=cli_callback)
+        except Exception as e:
+            print(f"\033[91m{e}\033[0m")
+            sys.exit(1)
 
 if __name__ == "__main__":
     main()
