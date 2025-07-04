@@ -6,60 +6,84 @@ import eyed3
 import mimetypes
 import argparse
 import logging
+from typing import Optional, Callable
 from eyed3.id3 import ID3_V2_4
 from PyQt5 import QtWidgets, QtCore
 
-# Custom logging handler to forward logs to the GUI status window.
+
 class GuiLogHandler(logging.Handler):
-    def __init__(self, callback):
+    def __init__(self, callback: Callable[[str], None]):
         super().__init__()
         self.callback = callback
 
-    def emit(self, record):
+    def emit(self, record: logging.LogRecord) -> None:
         try:
             msg = self.format(record)
             self.callback(msg)
-        except Exception:
+        except (RecursionError, Exception):
             self.handleError(record)
 
-def bake_metadata(workingDir, progress_callback=None):
-    if workingDir.startswith("'"):
-        workingDir = workingDir[1:-1]
-    # Sort the working list alphabetically
-    workingList = sorted(os.listdir(workingDir))
 
-    if "metadata" not in workingList:
-        error_msg = "ERROR: Working directory MUST contain a metadata directory. Remember to click the 'Export audiobook' button in the website!"
+def bake_metadata(working_dir: str,
+                  progress_callback: Optional[
+                      Callable[[str, int], None]] = None) -> None:
+    """
+    Bake metadata into audiobook MP3 files.
+    
+    Args:
+        working_dir: Directory containing audiobook files and metadata
+        progress_callback: Optional callback for progress updates
+    """
+    if working_dir.startswith("'"):
+        working_dir = working_dir[1:-1]
+    
+    # Sort the working list alphabetically
+    working_list = sorted(os.listdir(working_dir))
+
+    if "metadata" not in working_list:
+        error_msg = (
+            "ERROR: Working directory MUST contain a metadata directory. "
+            "Remember to click the 'Export audiobook' button in the website!"
+        )
         if progress_callback:
             progress_callback(error_msg, 0)
         raise FileNotFoundError(error_msg)
 
-    cover = [f for f in os.listdir(os.path.join(workingDir, "metadata")) if f.startswith("cover")]
-    if len(cover) != 1:
+    metadata_dir = os.path.join(working_dir, "metadata")
+    cover_files = [f for f in os.listdir(metadata_dir)
+                   if f.startswith("cover")]
+    
+    if len(cover_files) != 1:
         error_msg = "ERROR: Cover art not found"
         if progress_callback:
             progress_callback(error_msg, 0)
         raise FileNotFoundError(error_msg)
 
-    with open(os.path.join(workingDir, "metadata", cover[0]), "rb") as f:
-        coverBytes = f.read()
-    coverMime = mimetypes.guess_type(cover[0])[0]
+    # Read cover art once
+    cover_path = os.path.join(metadata_dir, cover_files[0])
+    with open(cover_path, "rb") as f:
+        cover_bytes = f.read()
+    cover_mime = mimetypes.guess_type(cover_files[0])[0]
 
     # Open JSON file with UTF-8 encoding
-    with open(os.path.join(workingDir, "metadata", "metadata.json"), "r", encoding="utf-8") as f:
+    metadata_path = os.path.join(metadata_dir, "metadata.json")
+    with open(metadata_path, "r", encoding="utf-8") as f:
         metadata = json.load(f)
 
-    authorName = "Unknown"
+    # Extract author name more efficiently
+    author_name = "Unknown"
     for creator in metadata["creator"]:
         if creator["role"] == "author":
-            authorName = creator["name"]
+            author_name = creator["name"]
+            break
 
+    # Build chapters dictionary
     chapters = {}
     for chap in metadata["chapters"]:
         chapters.setdefault(chap["spine"], []).append(chap)
 
     # Collect all parts to process
-    parts = [file for file in workingList if file.startswith("Part ")]
+    parts = [file for file in working_list if file.startswith("Part ")]
     total = len(parts)
     if total == 0:
         error_msg = "ERROR: No parts found to process."
@@ -71,19 +95,19 @@ def bake_metadata(workingDir, progress_callback=None):
         number = file[len("Part "):].split(".")[0]
         spine_index = int(number) - 1
 
-        audiofile = eyed3.load(os.path.join(workingDir, file))
+        audiofile = eyed3.load(os.path.join(working_dir, file))
         if audiofile.tag is None:
-            # explizit ID3v2.4 initialisieren (UTF-8)
+            # Initialize ID3v2.4 explicitly (UTF-8)
             audiofile.initTag(version=ID3_V2_4)
         else:
             audiofile.tag.clear()
 
-        # make that we work with V2.4 and UTF-8
+        # Ensure we work with V2.4 and UTF-8
         audiofile.tag.version = ID3_V2_4
 
         audiofile.tag.title = f"Part {int(number)}"
-        audiofile.tag.artist = authorName
-        audiofile.tag.images.set(3, coverBytes, coverMime)
+        audiofile.tag.artist = author_name
+        audiofile.tag.images.set(3, cover_bytes, cover_mime)
         audiofile.tag.album = metadata["title"]
         audiofile.tag.track_num = (int(number), len(metadata["spine"]))
 
@@ -92,19 +116,23 @@ def bake_metadata(workingDir, progress_callback=None):
         if spine_chapters:
             # Check for non-increasing offsets
             prev_offset = spine_chapters[0]["offset"]
-            for i,chap in enumerate(spine_chapters[1:], start=1):
+            for i, chap in enumerate(spine_chapters[1:], start=1):
                 current_offset = chap["offset"]
                 if current_offset <= prev_offset:
                     # Found overlapping chapter - report and exit
                     error_parts = [
-                        f"ERROR: {os.path.join(workingDir, 'metadata', 'metadata.json')} has errors with overlapping chapter times.",
+                        f"ERROR: {metadata_path} has errors with "
+                        f"overlapping chapter times.",
                         f"Look in chapters for spine: {spine_index}",
-                        f"Chapter '{spine_chapters[i-1]['title']}' at offset: {spine_chapters[i-1]['offset']}",
-                        f"Chapter '{chap['title']}' at offset: {current_offset}"
+                        f"Chapter '{spine_chapters[i-1]['title']}' at "
+                        f"offset: {spine_chapters[i-1]['offset']}",
+                        f"Chapter '{chap['title']}' at offset: "
+                        f"{current_offset}"
                     ]
 
                     # Format for current mode
-                    if progress_callback and hasattr(progress_callback, '__self__'):
+                    if (progress_callback and
+                            hasattr(progress_callback, '__self__')):
                         error_msg = "<br>".join(error_parts)
                     else:
                         error_msg = "\n".join(error_parts)
@@ -135,7 +163,7 @@ def bake_metadata(workingDir, progress_callback=None):
                 b"last",
                 (
                     int(last["offset"]) * 1000,
-                    int(metadata["spine"][chap["spine"]]["duration"] * 1000)
+                    int(metadata["spine"][last["spine"]]["duration"] * 1000)
                 )
             )
             c.title = last["title"]
@@ -147,7 +175,7 @@ def bake_metadata(workingDir, progress_callback=None):
             description="Table of Contents"
         )
 
-        # als v2.4 speichern, damit UTF-8 Zeichen (Umlaute) korrekt sind
+        # Save as v2.4 so UTF-8 characters (umlauts) are correct
         audiofile.tag.save(version=ID3_V2_4)
 
         # Update progress
