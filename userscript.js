@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name          LibreGRAB
 // @namespace     http://tampermonkey.net/
-// @version       2025-03-27
+// @version       2025-07-04
 // @description   Download all the booty!
-// @author        PsychedelicPalimpsest
+// @author        PsychedelicPalimpsest (modded by klept0)
 // @license       MIT
 // @supportURL    https://github.com/PsychedelicPalimpsest/LibbyRip/issues
 // @match         *://*.listen.libbyapp.com/*
